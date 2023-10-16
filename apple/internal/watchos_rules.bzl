@@ -744,7 +744,7 @@ delegate is referenced in the single-target `watchos_application`'s `deps`.
         features = features,
         objc_fragment = ctx.fragments.objc,
         platform_type_string = ctx.attr.platform_type,
-        uses_swift = False,  # No binary deps to check.
+        uses_swift = swift_support.uses_swift(ctx.attr.deps),
         xcode_version_config = ctx.attr._xcode_config[apple_common.XcodeVersionConfig],
     )
     predeclared_outputs = ctx.outputs
@@ -1461,7 +1461,10 @@ delegate is referenced in the single-target `watchos_application`'s `deps`.
         shared_capabilities = ctx.attr.shared_capabilities,
     )
     cc_toolchain_forwarder = ctx.split_attr._cc_toolchain_forwarder
-    embeddable_targets = ctx.attr.deps
+    embeddable_targets = (
+        ctx.attr.deps + ctx.attr.frameworks + ctx.attr.extensions
+    )
+
     executable_name = ctx.attr.executable_name
     features = features_support.compute_enabled_features(
         requested_features = ctx.features,
@@ -1511,6 +1514,9 @@ delegate is referenced in the single-target `watchos_application`'s `deps`.
         validation_mode = ctx.attr.entitlements_validation,
     )
 
+    # TODO: (mvasiv) Check if needed.
+    # extra_linkopts.append("-fapplication-extension")
+
     link_result = linking_support.register_binary_linking_action(
         ctx,
         avoid_deps = ctx.attr.frameworks,
@@ -1534,15 +1540,17 @@ delegate is referenced in the single-target `watchos_application`'s `deps`.
         rule_descriptor = rule_descriptor,
     )
 
+    bundle_verification_targets = [struct(target = ext) for ext in ctx.attr.extensions]
+
     processor_partials = [
         partials.apple_bundle_info_partial(
             actions = actions,
             bundle_extension = bundle_extension,
             bundle_name = bundle_name,
             bundle_id = bundle_id,
-            entitlements = entitlements,
+            entitlements = entitlements, # TODO: (mvasiv) entitlements.bundle
             executable_name = executable_name,
-            extension_safe = True,
+            extension_safe = True, # TODO: (mvasiv) needed?
             label_name = label.name,
             platform_prerequisites = platform_prerequisites,
             predeclared_outputs = predeclared_outputs,
@@ -1612,6 +1620,11 @@ delegate is referenced in the single-target `watchos_application`'s `deps`.
             platform_prerequisites = platform_prerequisites,
             watch_bundles = [archive],
         ),
+        partials.extension_safe_validation_partial(
+            is_extension_safe = True,
+            rule_label = label,
+            targets_to_validate = ctx.attr.frameworks,
+        ),
         partials.framework_import_partial(
             actions = actions,
             apple_mac_toolchain_info = apple_mac_toolchain_info,
@@ -1620,12 +1633,13 @@ delegate is referenced in the single-target `watchos_application`'s `deps`.
             platform_prerequisites = platform_prerequisites,
             provisioning_profile = provisioning_profile,
             rule_descriptor = rule_descriptor,
-            targets = ctx.attr.deps,
+            targets = ctx.attr.deps + ctx.attr.extensions + ctx.attr.frameworks, # Check frameworks
         ),
         partials.resources_partial(
             actions = actions,
             apple_mac_toolchain_info = apple_mac_toolchain_info,
             bundle_extension = bundle_extension,
+            bundle_verification_targets = bundle_verification_targets,
             bundle_id = bundle_id,
             bundle_name = bundle_name,
             executable_name = executable_name,
@@ -1635,6 +1649,7 @@ delegate is referenced in the single-target `watchos_application`'s `deps`.
             resource_deps = resource_deps,
             rule_descriptor = rule_descriptor,
             rule_label = label,
+            targets_to_avoid = ctx.attr.frameworks,
             top_level_infoplists = top_level_infoplists,
             top_level_resources = top_level_resources,
             version = ctx.attr.version,
@@ -1643,9 +1658,18 @@ delegate is referenced in the single-target `watchos_application`'s `deps`.
             actions = actions,
             apple_mac_toolchain_info = apple_mac_toolchain_info,
             binary_artifact = binary_artifact,
-            bundle_dylibs = True,
+            bundle_dylibs = True, # TODO: (mvasiv) Check if needed.
             dependency_targets = embeddable_targets,
             label_name = label.name,
+            platform_prerequisites = platform_prerequisites,
+        ),
+        partials.apple_symbols_file_partial(
+            actions = actions,
+            binary_artifact = binary_artifact,
+            dependency_targets = embeddable_targets,
+            dsym_binaries = debug_outputs.dsym_binaries,
+            label_name = label.name,
+            include_symbols_in_bundle = False,
             platform_prerequisites = platform_prerequisites,
         ),
     ]
@@ -1756,6 +1780,12 @@ which case it will be placed under a directory with the same name in the bundle.
 A list of framework targets (see
 [`watchos_framework`](https://github.com/bazelbuild/rules_apple/blob/master/doc/rules-watchos.md#watchos_framework))
 that this target depends on.
+""",
+            ),
+            "extensions": attr.label_list(
+                providers = [[AppleBundleInfo, WatchosExtensionBundleInfo]],
+                doc = """
+A list of watchOS application extensions to include in the final watch extension bundle.
 """,
             ),
         },
