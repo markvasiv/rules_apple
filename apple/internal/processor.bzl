@@ -92,6 +92,10 @@ load(
     "outputs",
 )
 load(
+    "//apple/internal/resource_actions:app_intents.bzl",
+    "app_intents_ssu_training_commands",
+)
+load(
     "//apple/internal/utils:bundle_paths.bzl",
     "bundle_paths",
 )
@@ -243,7 +247,8 @@ def _bundle_partial_outputs_files(
         partial_outputs,
         platform_prerequisites,
         provisioning_profile,
-        rule_descriptor):
+        rule_descriptor,
+        ssu_training_commands = None):
     """Invokes bundletool to bundle the files specified by the partial outputs.
 
     Args:
@@ -269,6 +274,9 @@ def _bundle_partial_outputs_files(
       platform_prerequisites: Struct containing information on the platform being targeted.
       provisioning_profile: File for the provisioning profile.
       rule_descriptor: A rule descriptor for platform and product types from the rule context.
+      ssu_training_commands: When building tree artifact outputs, shell command lines
+          that generate App Intents SSU (NL training) assets on the assembled bundle
+          before it is signed. May be `None`.
     """
 
     # Autotrim locales here only if the rule supports it and there weren't requested locales.
@@ -389,6 +397,7 @@ def _bundle_partial_outputs_files(
         bundle_merge_zips = control_zips,
         output = output_file.path,
         code_signing_commands = codesigning_command or "",
+        ssu_training_commands = ssu_training_commands or "",
         post_processor = post_processor_path,
     )
 
@@ -530,6 +539,22 @@ def _bundle_post_process_and_sign(
             signed_frameworks_depsets.append(partial_output.signed_frameworks)
     transitive_signed_frameworks = depset(transitive = signed_frameworks_depsets)
 
+    # SSU (NL training) asset generation requested by the AppIntents metadata bundle
+    # partial. It requires the assembled bundle, so it runs within the bundling/signing
+    # actions, before codesigning.
+    app_intents_ssu_training = None
+    for partial_output in partial_outputs:
+        if getattr(partial_output, "app_intents_ssu_training", None):
+            app_intents_ssu_training = partial_output.app_intents_ssu_training
+
+    ssu_training_commands = None
+    if app_intents_ssu_training:
+        ssu_training_commands = app_intents_ssu_training_commands(
+            bundle_id = app_intents_ssu_training.bundle_id,
+            bundle_path = archive_paths[_LOCATION_ENUM.bundle],
+            resources_path = archive_paths[_LOCATION_ENUM.resource],
+        )
+
     if tree_artifact_is_enabled:
         extra_input_files = []
 
@@ -565,6 +590,7 @@ def _bundle_post_process_and_sign(
             ipa_post_processor = ipa_post_processor,
             label_name = rule_label.name,
             locales_to_include = locales_to_include,
+            ssu_training_commands = ssu_training_commands,
             output_discriminator = output_discriminator,
             output_file = output_archive,
             partial_outputs = partial_outputs,
@@ -621,6 +647,7 @@ def _bundle_post_process_and_sign(
             input_archive = unprocessed_archive,
             ipa_post_processor = ipa_post_processor,
             label_name = rule_label.name,
+            ssu_training_commands = ssu_training_commands,
             output_archive = output_archive,
             output_archive_root_path = output_archive_root_path,
             output_discriminator = output_discriminator,

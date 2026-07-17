@@ -28,12 +28,14 @@ bzl_library(
     name = "app_intents",
     srcs = ["app_intents.bzl"],
     visibility = [
+        "//apple/internal:__pkg__",
         "//apple/internal/partials:__pkg__",
     ],
     deps = [
         "//apple/internal:intermediates",
         "//apple/internal:shared_environment",
         "@apple_support//lib:apple_support",
+        "@bazel_skylib//lib:paths",
     ],
 )
 

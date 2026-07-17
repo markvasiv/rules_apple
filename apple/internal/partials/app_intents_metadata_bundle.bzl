@@ -29,6 +29,7 @@ load(
 def _app_intents_metadata_bundle_partial_impl(
         *,
         actions,
+        bundle_id = None,
         cc_toolchains,
         deps,
         label,
@@ -77,7 +78,16 @@ def _app_intents_metadata_bundle_partial_impl(
     if str(platform_prerequisites.platform_type) == "macos":
         bundle_location = processor.location.resource
 
+    # Request SSU (NL training) asset generation during bundling, mirroring Xcode's
+    # AppIntentsSSUTraining build phase. Requires the assembled bundle, so it is
+    # deferred to the bundling/signing actions rather than run here. Currently
+    # opt-in via the `apple.app_intents_ssu_training` feature while being validated.
+    app_intents_ssu_training = None
+    if bundle_id and "apple.app_intents_ssu_training" in platform_prerequisites.features:
+        app_intents_ssu_training = struct(bundle_id = bundle_id)
+
     return struct(
+        app_intents_ssu_training = app_intents_ssu_training,
         bundle_files = [(
             bundle_location,
             "Metadata.appintents",
@@ -88,6 +98,7 @@ def _app_intents_metadata_bundle_partial_impl(
 def app_intents_metadata_bundle_partial(
         *,
         actions,
+        bundle_id = None,
         cc_toolchains,
         deps,
         label,
@@ -99,6 +110,10 @@ def app_intents_metadata_bundle_partial(
 
     Args:
         actions: The actions provider from ctx.actions.
+        bundle_id: The bundle identifier of the bundle being processed. If set and the
+            `apple.app_intents_ssu_training` feature is enabled, SSU (NL training)
+            assets will also be generated for the bundle during the bundling/signing
+            actions.
         cc_toolchains: Dictionary of CcToolchainInfo and ApplePlatformInfo providers under a split
             transition to relay target platform information.
         deps: Dictionary of targets under a split transition implementing the AppIntents protocol.
@@ -113,6 +128,7 @@ def app_intents_metadata_bundle_partial(
     return partial.make(
         _app_intents_metadata_bundle_partial_impl,
         actions = actions,
+        bundle_id = bundle_id,
         cc_toolchains = cc_toolchains,
         deps = deps,
         label = label,

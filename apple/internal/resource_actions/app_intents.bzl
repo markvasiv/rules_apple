@@ -15,6 +15,7 @@
 """AppIntents intents related actions."""
 
 load("@apple_support//lib:apple_support.bzl", "apple_support")
+load("@bazel_skylib//lib:paths.bzl", "paths")
 load("//apple/internal:intermediates.bzl", "intermediates")
 load("//apple/internal:shared_environment.bzl", "shared_environment")
 
@@ -186,3 +187,63 @@ fi
     )
 
     return output
+
+def app_intents_ssu_training_commands(
+        *,
+        bundle_id,
+        contents_path,
+        resources_path):
+    """Returns shell command lines that generate App Intents SSU (NL training) assets.
+
+    Mirrors Xcode's AppIntentsSSUTraining build phase, which runs
+    appintentsnltrainingprocessor on the assembled product to generate
+    Metadata.appintents/root.ssu.yaml and the per-locale <locale>.lproj/nlu.appintents
+    archives. Without these assets, Siri's assistant schema routing and App Shortcuts
+    utterances do not recognize the app.
+
+    The returned commands must be executed on an assembled (but not yet codesigned)
+    bundle, in an environment where $WORK_DIR points to the archive root and DEVELOPER_DIR
+    is set (i.e. within the bundling/signing actions), so that the generated assets are
+    sealed by the code signature.
+
+    Args:
+        bundle_id: The bundle identifier of the bundle being processed.
+        contents_path: Path to the bundle's contents directory, relative to the archive
+            root. Equal to the bundle root except on macOS, where it is `Contents`.
+        resources_path: Path to the bundle's resources directory, relative to the
+            archive root. Equal to the bundle root except on macOS, where it is
+            `Contents/Resources`.
+
+    Returns:
+        A string with the shell command lines to execute.
+    """
+    contents_dir = paths.join("$WORK_DIR", contents_path) if contents_path else "$WORK_DIR"
+    product_dir = paths.join("$WORK_DIR", resources_path) if resources_path else "$WORK_DIR"
+    # The tool may report failures on its output while still exiting with 0 (e.g.
+    # "error: Could not archive SSU artifacts"), so inspect the output for errors
+    # like the AppIntentsMetadataProcessor action does.
+    return """\
+if [[ -d "{product_dir}/Metadata.appintents" ]] && \\
+    xcrun --find appintentsnltrainingprocessor >/dev/null 2>&1; then
+  ssu_temp_dir="$(mktemp -d)"
+  chmod u+w "{product_dir}" "{product_dir}/Metadata.appintents"
+  find "{product_dir}" -maxdepth 1 -type d -name "*.lproj" -exec chmod u+w {{}} +
+  ssu_exit_status=0
+  ssu_output=$(xcrun appintentsnltrainingprocessor \\
+      --infoplist-path "{contents_dir}/Info.plist" \\
+      --temp-dir-path "$ssu_temp_dir" \\
+      --bundle-id "{bundle_id}" \\
+      --product-path "{product_dir}" \\
+      --extracted-metadata-path "{product_dir}/Metadata.appintents" \\
+      --archive-ssu-assets 2>&1) || ssu_exit_status=$?
+  rm -rf "$ssu_temp_dir"
+  if [[ "$ssu_exit_status" -ne 0 || "$ssu_output" == *error:* ]]; then
+    echo "$ssu_output" >&2
+    exit 1
+  fi
+fi
+""".format(
+        bundle_id = bundle_id,
+        contents_dir = contents_dir,
+        product_dir = product_dir,
+    )

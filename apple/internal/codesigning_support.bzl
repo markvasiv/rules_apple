@@ -595,7 +595,8 @@ def _post_process_and_sign_archive_action(
         process_and_sign_template,
         provisioning_profile,
         rule_descriptor,
-        signed_frameworks):
+        signed_frameworks,
+        ssu_training_commands = None):
     """Post-processes and signs an archived bundle.
 
     Args:
@@ -621,6 +622,8 @@ def _post_process_and_sign_archive_action(
       provisioning_profile: The provisioning profile file. May be `None`.
       rule_descriptor: A rule descriptor for platform and product types from the rule context.
       signed_frameworks: Depset containing each framework that has already been signed.
+      ssu_training_commands: Shell command lines that generate App Intents SSU (NL
+          training) assets on the assembled bundle before signing. May be `None`.
     """
     input_files = [input_archive]
     processing_tools = []
@@ -678,7 +681,7 @@ def _post_process_and_sign_archive_action(
 
     # If there is no work to be done, skip the processing/signing action, just
     # copy the file over.
-    has_work = any([signing_command_lines, ipa_post_processor_path, should_compress])
+    has_work = any([signing_command_lines, ipa_post_processor_path, should_compress, ssu_training_commands])
     if not has_work:
         actions.run_shell(
             command = "cp -p '%s' '%s'" % (input_archive.path, output_archive.path),
@@ -701,6 +704,7 @@ def _post_process_and_sign_archive_action(
         is_executable = True,
         substitutions = {
             "%ipa_post_processor%": shell.quote(ipa_post_processor_path) or "",
+            "%ssu_training_command_lines%": ssu_training_commands or "",
             "%output_path%": shell.quote(output_archive.path),
             "%should_compress%": "1" if should_compress else "",
             "%should_verify%": "1",  # always verify the crc
@@ -719,8 +723,10 @@ def _post_process_and_sign_archive_action(
         arguments.append("should_process")
     if should_compress:
         arguments.append("should_compress")
+    if ssu_training_commands:
+        arguments.append("should_generate_ssu_assets")
 
-    run_on_darwin = any([signing_command_lines, ipa_post_processor_path])
+    run_on_darwin = any([signing_command_lines, ipa_post_processor_path, ssu_training_commands])
     if run_on_darwin:
         apple_support.run(
             actions = actions,

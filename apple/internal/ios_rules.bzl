@@ -289,6 +289,7 @@ def _ios_application_impl(ctx):
         ),
         partials.app_intents_metadata_bundle_partial(
             actions = actions,
+            bundle_id = bundle_id,
             cc_toolchains = cc_toolchain_forwarder,
             deps = ctx.split_attr.app_intents,
             label = label,
