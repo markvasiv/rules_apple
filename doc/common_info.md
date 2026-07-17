@@ -235,6 +235,38 @@ ios_unit_test(
 )
 ```
 
+### App Intents SSU Training Assets {#apple.app_intents_ssu_training}
+
+Xcode runs an `AppIntentsSSUTraining` build phase after App Intents metadata
+extraction, invoking `appintentsnltrainingprocessor` on the built product to
+generate natural-language training assets: `Metadata.appintents/root.ssu.yaml`
+and one compiled `<locale>.lproj/nlu.appintents` archive per localization.
+Siri requires these assets to recognize App Shortcut phrases and, on iOS 26
+and later, to route assistant schema requests (e.g.
+`@AssistantIntent(schema: .media.playAudio)`) to the app. Without them, Siri
+reports the app as not supporting the corresponding App Intents and falls back
+to just launching it.
+
+When this feature is enabled, applications that set `app_intents` generate
+these assets during bundling, before codesigning:
+
+```shell
+bazel build --features=apple.app_intents_ssu_training //your/app
+```
+
+or on a per-target basis:
+
+```bzl
+ios_application(
+    ...
+    app_intents = [":intents_lib"],
+    features = ["apple.app_intents_ssu_training"],
+)
+```
+
+This step requires an Xcode toolchain that provides
+`appintentsnltrainingprocessor`; it is skipped when the tool is not available.
+
 ### Codesigning performance
 
 For larger applications, codesigning the final binary might be a

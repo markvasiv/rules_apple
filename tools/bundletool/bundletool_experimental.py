@@ -40,6 +40,9 @@ following keys:
       contents should be placed.
   code_signing_commands: An optional list of shell commands that should be
       executed to sign the bundle.
+  ssu_training_commands: An optional string of shell command lines that generate
+      App Intents SSU (NL training) assets, executed after the bundle is
+      complete and post-processed but before it is signed.
   output: The path to the directory (which will be created/cleared) that will
       represent the complete bundle.
   post_processor: The optional path to an executable that will be run after the
@@ -84,6 +87,9 @@ INVALID_SYMLINK_TARGET_MSG_TEMPLATE = (
 CODE_SIGN_ERROR_MSG_TEMPLATE = 'Code signing failed with exit code %d'
 
 POST_PROCESSOR_ERROR_MSG_TEMPLATE = 'Post processor failed with exit code %d'
+
+SSU_TRAINING_ERROR_MSG_TEMPLATE = (
+    'App Intents SSU training failed with exit code %d')
 
 class BundleConflictError(ValueError):
   """Raised when two different files would be bundled in the same location."""
@@ -133,6 +139,15 @@ class PostProcessorError(EnvironmentError):
                               POST_PROCESSOR_ERROR_MSG_TEMPLATE % exit_code)
 
 
+class SSUTrainingError(EnvironmentError):
+  """Raised if the App Intents SSU training commands fail."""
+
+  def __init__(self, exit_code):
+    self.exit_code = exit_code
+    EnvironmentError.__init__(self,
+                              SSU_TRAINING_ERROR_MSG_TEMPLATE % exit_code)
+
+
 class Bundler(object):
   """Implements the core functionality of the bundler."""
 
@@ -171,6 +186,10 @@ class Bundler(object):
     post_processor = self._control.get('post_processor')
     if post_processor:
       self._post_process_bundle(output_path, post_processor)
+
+    ssu_training_commands = self._control.get('ssu_training_commands')
+    if ssu_training_commands:
+      self._generate_ssu_training_assets(output_path, ssu_training_commands)
 
     code_signing_commands = self._control.get('code_signing_commands')
     if code_signing_commands:
@@ -388,6 +407,25 @@ class Bundler(object):
           (post_processor, work_dir), env={"TREE_ARTIFACT_OUTPUT": bundle_root})
     except subprocess.CalledProcessError as e:
       raise PostProcessorError(e.returncode) from e
+
+  def _generate_ssu_training_assets(self, bundle_root, command_lines):
+    """Executes the App Intents SSU training command lines on the bundle.
+
+    Args:
+      bundle_root: The path to the bundle.
+      command_lines: The shell command lines that should be executed on the
+          bundle to generate the SSU (NL training) assets. They reference the
+          bundle via a WORK_DIR environment variable and require the action's
+          environment (notably DEVELOPER_DIR) to locate the Xcode toolchain.
+    """
+    env = dict(os.environ)
+    env['WORK_DIR'] = bundle_root
+    try:
+      subprocess.check_call(
+          ['/bin/bash', '-e', '-u', '-o', 'pipefail', '-c', command_lines],
+          env=env)
+    except subprocess.CalledProcessError as e:
+      raise SSUTrainingError(e.returncode) from e
 
   def _sign_bundle(self, bundle_root, command_lines):
     """Executes the signing command lines on the bundle.

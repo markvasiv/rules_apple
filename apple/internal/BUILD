@@ -534,6 +534,7 @@ bzl_library(
         ":experimental",
         ":intermediates",
         ":outputs",
+        "//apple/internal/resource_actions:app_intents",
         "//apple/internal/utils:bundle_paths",
         "//apple/internal/utils:defines",
         "@apple_support//lib:apple_support",

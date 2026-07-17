@@ -38,6 +38,11 @@ if [[ -n "$POST_PROCESSOR" ]]; then
   "$POST_PROCESSOR" "$WORK_DIR"
 fi
 
+# Generate App Intents SSU (NL training) assets, if requested. This may expand
+# to nothing. It must run before signing so the generated assets are sealed by
+# the code signature.
+%ssu_training_command_lines%
+
 # Sign the application, if requested. This may expand to nothing in the case
 # where signing is not being performed.
 %signing_command_lines%
